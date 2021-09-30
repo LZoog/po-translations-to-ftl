@@ -18,5 +18,5 @@ npm install
 ## Usage
 
 ```
-npm start -- --ftl=my-file.ftl --locale=test
+npm start -- --ftlFile=my-file.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po
 ```

@@ -31,7 +31,15 @@ const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/;
 
 const getQuoteString = (string: String | undefined) => {
   if (string) {
-    const match = string.match(quotesRegex)
+    // some msgids begin with `""` and have the string on the next line, oftentimes with nested quotes and newlines. Remove `msgid ""\n` and combine separated lines if so.
+    if (string.includes('msgid ""\n"')) {
+      string = string.split('msgid ""\n').pop();
+    }
+    if (string?.includes('"\n"')) {
+      string = string.replace('"\n"', "")
+    }
+    const match = string!.match(quotesRegex)
+    // there should always be a match, but this makes TS happy
     if (match) {
       return match[0]
     }
@@ -49,13 +57,9 @@ const getQuoteString = (string: String | undefined) => {
     const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`)
   
     if (poContent) {
-      const poMsgConcatSets = poContent.toString('utf-8').split('\n\n');
+      const poMsgConcatSets = poContent.toString('utf-8').split('\n\n')
       const translationMap = poMsgConcatSets.map((concatSet) => {
-        // some files have commented out translations
-        const poMsgSet = concatSet.includes('/n#~ msgstr')
-          ? concatSet.split('\n#~ msgstr')
-          : concatSet.split('\nmsgstr')
-
+        const poMsgSet = concatSet.split('\nmsgstr')
         return ({
           eng: getQuoteString(poMsgSet[0]),
           translation: getQuoteString(poMsgSet[1]),

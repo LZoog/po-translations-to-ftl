@@ -27,22 +27,42 @@ async function asyncFilter(arr: Array<string>, callback: Function) {
   return (await Promise.all(arr.map(async (item: any) => (await callback(item)) ? item : fail))).filter(i=>i!==fail)
 }
 
+const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/;
+
+const getQuoteString = (string: String | undefined) => {
+  if (string) {
+    const match = string.match(quotesRegex)
+    if (match) {
+      return match[0]
+    }
+  }
+  return ""
+}
+
 (async () => {
   try {
-    const localeContent = await fs.readdir(localeDir)
+    const localeDirContent = await fs.readdir(localeDir)
+    const langDirs = await asyncFilter(localeDirContent, async(fileOrDirName: string) => (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory())
 
-    const langDirs = await asyncFilter(localeContent, async(fileOrDirName: string) => {
-      const fileOrDir = await fs.lstat(`${localeDir}/${fileOrDirName}`)
-      return fileOrDir.isDirectory();
-    })
-
-    console.log('langDirs', langDirs);
-
-    const directory = langDirs[0];
-    const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`);
+    // this will be a for loop, just starting with one
+    const directory = langDirs[0]
+    const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`)
   
     if (poContent) {
-      console.log('poContent', poContent.toString('utf-8'))
+      const poMsgConcatSets = poContent.toString('utf-8').split('\n\n');
+      const translationMap = poMsgConcatSets.map((concatSet) => {
+        // some files have commented out translations
+        const poMsgSet = concatSet.includes('/n#~ msgstr')
+          ? concatSet.split('\n#~ msgstr')
+          : concatSet.split('\nmsgstr')
+
+        return ({
+          eng: getQuoteString(poMsgSet[0]),
+          translation: getQuoteString(poMsgSet[1]),
+        })
+      })
+
+      console.log(translationMap);
     }
   
   } catch(error) {

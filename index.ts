@@ -113,7 +113,7 @@ const convertPoVarsToFltVars = (poContent: String) => {
       const ftlConcatSets = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '' && !set.startsWith("#"))
       ftlConcatSets.forEach((concatSet) => {
         // we can grab the fluent ID/message reliably by using what's on the left/hand side of ' = ' 
-        // except for loops where they may begin on the next line (' =')
+        // except for blocks where they may begin on the next line (' =')
         const [ ftlId, engTranslation ] = concatSet.includes(' = ') ? concatSet.split(' = ') : concatSet.split(' =')
 
         let translationFound = false
@@ -124,7 +124,8 @@ const convertPoVarsToFltVars = (poContent: String) => {
             break;
           }
         }
-        if (!translationFound) {
+        // NOTE/TODO: this will set references with text between when these should be filtered out, e.g. `{ a } other copy { b }`
+        if (!translationFound && !(engTranslation.startsWith('{') && engTranslation.endsWith('}'))) {
           // delete the line if no existing translation is found
           const concatSetIndex = ftlContent.indexOf(concatSet)
           const contentBeforeSet = ftlContent.substring(0, concatSetIndex - 1)

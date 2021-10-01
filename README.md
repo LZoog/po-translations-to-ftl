@@ -5,7 +5,7 @@ Say your team is migrating from [gettext](https://www.npmjs.com/package/node-get
 
 Does this oddly specific case apply to you?* Here's the tool for you!
 
-*This tool can of course be expanded further but it was originally created for this specific purpose.
+<b>*NOTE:</b> This script in its current state is rudimentary and there's almost certainly unaccounted for edge cases. It was originally written for one ftl file and functionality can/should be expanded. Checkout TODO comments.
 
 ## Installation
 

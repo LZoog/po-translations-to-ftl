@@ -34,7 +34,8 @@ async function asyncFilter(arr: Array<string>, callback: Function) {
 
 const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/;
 // selects until the string contains a newline that does not begin with a space
-const untilNewlineWithoutSpace = /(?:(?!(\n[a-z]))[\s\S])*/g
+const untilNewlineWithoutSpaceRegex = /(?:(?!(\n[a-z]))[\s\S])*/g
+const poVarsRegex = /%\(.*?\)s/g
 
 const getPoQuoteString = (string: String | undefined) => {
   if (string) {
@@ -54,34 +55,33 @@ const getPoQuoteString = (string: String | undefined) => {
   return ""
 }
 
-const getFluentIdsAndStrings = (string: String) => {
-  // filter out blank lines and comments
-  const ftlConcatSets = string.match(untilNewlineWithoutSpace)!.filter(set => set !== '' && !set.startsWith("#"))
-  return ftlConcatSets.map((concatSet) => {
-    const [ ftlId, engTranslation] = concatSet.includes(' = ') ? concatSet.split(' = ') : concatSet.split(' =')
-    // let [ftlId, engTranslation] = concatSet.split(' = ')
-    // if (engTranslation === undefined) {
-    //   [ftlId, engTranslation]
-    // }
-    return ({
-      ftlId,
-      engTranslation
+
+const convertPoVarsToFltVars = (poContent: String) => {
+  const getConvertedPoContent = (poFtlVarMap: {
+    poVar: string;
+    ftlVar: string;
+  }[] ) => {
+    let convertedPoContent = poContent;
+    poFtlVarMap.forEach(({poVar, ftlVar}) => {
+      poContent.split(poVar).join()
+      convertedPoContent = convertedPoContent.replace(poVar, ftlVar);
     })
-  })
+    return convertedPoContent;
+  }
+  const poVars = poContent.match(poVarsRegex)
+
+  if (poVars) {
+    const poFtlVarMap = poVars.map((poVar) => {
+      const ftlVar = poVar.replace('%(', '{ $').replace(')s', ' }')
+      return ({
+        poVar,
+        ftlVar
+      })
+    })
+    return getConvertedPoContent(poFtlVarMap);
+  }
+  return poContent;
 }
-
-// const copyFtlFile = () => {
-
-// }
-
-// const getPoFileTranslationMap = () => {
-
-// }
-
-// const getFtlTranslationMap = () => {
-//   const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
-
-// }
 
 (async () => {
   try {
@@ -92,26 +92,47 @@ const getFluentIdsAndStrings = (string: String) => {
     // this will be a for loop, just starting with one
     const directory = langDirs[0]
     const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`).toString('utf-8')
-    const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
+
+    // fs.copyFileSync(`${ftlDir}/${ftlFile}`, `${localeDir}/${directory}/${ftlFile}`)
+    // const ftlContent = fs.readFileSync(`${localeDir}/${directory}/${ftlFile}`).toString('utf-8')
+    let ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
   
     if (poContent && ftlContent) {
 
-      const ftlTranslationMap = getFluentIdsAndStrings(ftlContent)
+      const poMsgConcatSets = convertPoVarsToFltVars(poContent).split('\n\n')
 
-      console.log(ftlTranslationMap)
+      const translationMap = poMsgConcatSets.map((concatSet) => {
+        const poMsgSet = concatSet.split('\nmsgstr')
+        return ({
+          eng: getPoQuoteString(poMsgSet[0]),
+          translation: getPoQuoteString(poMsgSet[1]),
+        })
+      })
 
-      // fs.copyFileSync(`${ftlDir}/${ftlFile}`, `${localeDir}/${directory}/${ftlFile}`)
+      // filter out blank lines and comments
+      const ftlConcatSets = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '' && !set.startsWith("#"))
+      ftlConcatSets.forEach((concatSet) => {
+        // we can grab the fluent ID/message reliably by using what's on the left/hand side of ' = ' 
+        // except for loops where they may begin on the next line (' =')
+        const [ ftlId, engTranslation ] = concatSet.includes(' = ') ? concatSet.split(' = ') : concatSet.split(' =')
 
-      // const poMsgConcatSets = poContent.split('\n\n')
-      // const translationMap = poMsgConcatSets.map((concatSet) => {
-      //   const poMsgSet = concatSet.split('\nmsgstr')
-      //   return ({
-      //     eng: getPoQuoteString(poMsgSet[0]),
-      //     translation: getPoQuoteString(poMsgSet[1]),
-      //   })
-      // })
-
-      // console.log(translationMap);
+        let translationFound = false
+        for (const poSet of translationMap) {
+          if (poSet.eng === engTranslation && poSet.translation !== "") {
+            ftlContent = ftlContent.replace(engTranslation, poSet.translation)
+            translationFound = true
+            break;
+          }
+        }
+        if (!translationFound) {
+          // delete the line if no existing translation is found
+          const concatSetIndex = ftlContent.indexOf(concatSet)
+          const contentBeforeSet = ftlContent.substring(0, concatSetIndex - 1)
+          const contentAfterSet = ftlContent.substring(concatSetIndex + concatSet.length)
+          ftlContent = contentBeforeSet + contentAfterSet
+        }
+      })
+        console.log('\n\n\nftlContent', ftlContent)
     }
   
   } catch(error) {

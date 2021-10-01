@@ -18,5 +18,5 @@ npm install
 ## Usage
 
 ```
-npm start -- --ftlFile=my-file.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po
+npm start -- --ftlDir=../fxa/packages/fxa-auth-server/public/locales/en-US --ftlFile=auth.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po
 ```

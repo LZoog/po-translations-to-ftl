@@ -24,7 +24,7 @@ const { ftlDir, ftlFile, localeDir, poFile } = yargs(hideBin(process.argv)).opti
     demandOption: true,
     describe: 'The path to the locale directory containing language directories, which contain an LC_MESSAGES directory with .po files',
   },
-}).parseSync();
+}).parseSync()
 
 // Stolen from SO. TODO: log which promises failed
 async function asyncFilter(arr: Array<string>, callback: Function) {
@@ -32,16 +32,16 @@ async function asyncFilter(arr: Array<string>, callback: Function) {
   return (await Promise.all(arr.map(async (item: any) => (await callback(item)) ? item : fail))).filter(i=>i!==fail)
 }
 
-const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/;
-// selects until the string contains a newline that does not begin with a space
-const untilNewlineWithoutSpaceRegex = /(?:(?!(\n[a-z]))[\s\S])*/g
+const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/
+// selects until the string contains a newline that does not begin with a space or a #
+const untilNewlineWithoutSpaceRegex = /(?:(?!(\n[a-z|#]))[\s\S])*/g
 const poVarsRegex = /%\(.*?\)s/g
 
 const getPoQuoteString = (string: String | undefined) => {
   if (string) {
     // some msgids begin with `""` and have the string on the next line, oftentimes with nested quotes and newlines. Remove `msgid ""\n` and combine separated lines if so.
     if (string.includes('msgid ""\n"')) {
-      string = string.split('msgid ""\n').pop();
+      string = string.split('msgid ""\n').pop()
     }
     if (string?.includes('"\n"')) {
       string = string.replace('"\n"', "")
@@ -61,12 +61,12 @@ const convertPoVarsToFltVars = (poContent: String) => {
     poVar: string;
     ftlVar: string;
   }[] ) => {
-    let convertedPoContent = poContent;
+    let convertedPoContent = poContent
     poFtlVarMap.forEach(({poVar, ftlVar}) => {
       poContent.split(poVar).join()
       convertedPoContent = convertedPoContent.replace(poVar, ftlVar);
     })
-    return convertedPoContent;
+    return convertedPoContent
   }
   const poVars = poContent.match(poVarsRegex)
 
@@ -78,26 +78,27 @@ const convertPoVarsToFltVars = (poContent: String) => {
         ftlVar
       })
     })
-    return getConvertedPoContent(poFtlVarMap);
+    return getConvertedPoContent(poFtlVarMap)
   }
-  return poContent;
+  return poContent
 }
 
 (async () => {
   try {
     const localeDirContent = await fs.readdir(localeDir)
-    // only include directories and exclude a 'templates' directory
-    const langDirs = (await asyncFilter(localeDirContent, async(fileOrDirName: string) => (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory())).filter(directory => directory !== 'templates')
+    // only include directories and exclude the 'templates' directory
+    const langDirs = (await asyncFilter(localeDirContent, async(fileOrDirName: string) => (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory())).filter(directory => directory !== 'templates' && directory !== 'en')
 
     // comment out this for loop and change to const directory = langDirs[0] to check content before writing
     langDirs.forEach((directory) => {
+      // const directory = langDirs[0]
       const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`).toString('utf-8')
   
-      fs.copyFileSync(`${ftlDir}/${ftlFile}`, `${localeDir}/${directory}/${ftlFile}`)
-      let ftlContent = fs.readFileSync(`${localeDir}/${directory}/${ftlFile}`).toString('utf-8')
+      // fs.copyFileSync(`${ftlDir}/${ftlFile}`, `${localeDir}/${directory}/${ftlFile}`)
+      // let ftlContent = fs.readFileSync(`${localeDir}/${directory}/${ftlFile}`).toString('utf-8')
   
       // uncomment this (and comment out two lines above) to log
-      // let ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
+      let ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
     
       if (poContent && ftlContent) {
         const poMsgConcatSets = convertPoVarsToFltVars(poContent).split('\n\n')
@@ -110,33 +111,75 @@ const convertPoVarsToFltVars = (poContent: String) => {
           })
         })
   
-        // filter out blank lines and comments
-        const ftlConcatSets = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '' && !set.startsWith("#"))
-        ftlConcatSets.forEach((concatSet) => {
-          // we can grab the fluent ID/message reliably by using what's on the left/hand side of ' = ' 
-          // except for blocks where they may begin on the next line (' =')
-          const [ ftlId, engTranslation ] = concatSet.includes(' = ') ? concatSet.split(' = ') : concatSet.split(' =')
+        // filter out blank lines
+        const ftlConcatSetsWithComments = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '')
+        ftlConcatSetsWithComments.splice(0, 4) // header comment
+
+        const setsWithComments: { comment: String | null, ftlId: string, engTranslation: string, set: string }[] = []
+        let matchIndex = 0
+        ftlConcatSetsWithComments.forEach((match, index) => {
+          // don't iterate over match if it's been reached in the inner loop
+          if (matchIndex <= index) {
+            if (!match.startsWith('#')) {
+              // we can grab the fluent ID/message reliably by using what's on the left/hand side of ' = ' 
+              // except for blocks where they may begin on the next line (' =')
+              const [ ftlId, engTranslation ] = match.includes(' = ') ? match.split(' = ') : match.split(' =')
+              setsWithComments.push({
+                comment: null,
+                ftlId,
+                engTranslation,
+                set: match,
+              })
+            } else {
+              let comment = match
+              for (let i = index + 1; i < ftlConcatSetsWithComments.length; i++) {
+                if (ftlConcatSetsWithComments[i].startsWith('#')) {
+                  comment += '\n' + ftlConcatSetsWithComments[i]
+                } else {
+                  const ftlIdAndTranslation = ftlConcatSetsWithComments[i]
+                  const [ ftlId, engTranslation ] = ftlIdAndTranslation.includes(' = ') ? ftlIdAndTranslation.split(' = ') : match.split(' =')
+                  setsWithComments.push({
+                    comment,
+                    ftlId,
+                    engTranslation,
+                    set: comment + '\n' + ftlIdAndTranslation,
+                  })
+                  break;
+                }
+                matchIndex = i + 2;
+              }
+            }
+          }
+        })
+
+        setsWithComments.forEach((set) => {
+
+        //   // we can grab the fluent ID/message reliably by using what's on the left/hand side of ' = ' 
+        //   // except for blocks where they may begin on the next line (' =')
+        //   const [ ftlId, engTranslation ] = concatSet.includes(' = ') ? concatSet.split(' = ') : concatSet.split(' =')
   
           let translationFound = false
           for (const poSet of translationMap) {
-            if (poSet.eng === engTranslation && poSet.translation !== "") {
-              ftlContent = ftlContent.replace(engTranslation, poSet.translation)
+            if (poSet.eng === set.engTranslation && poSet.translation !== "") {
+              ftlContent = ftlContent.replace(set.engTranslation, poSet.translation)
               translationFound = true
               break;
             }
           }
           // NOTE/TODO: this will set references with text between when these should be filtered out, e.g. `{ a } other copy { b }`
-          if (!translationFound && !(engTranslation.startsWith('{') && engTranslation.endsWith('}'))) {
+          if (!translationFound && !(set.engTranslation.startsWith('{') && set.engTranslation.endsWith('}'))) {
             // delete the line if no existing translation is found
-            const concatSetIndex = ftlContent.indexOf(concatSet)
+            const concatSetIndex = ftlContent.indexOf(set.set)
             const contentBeforeSet = ftlContent.substring(0, concatSetIndex - 1)
-            const contentAfterSet = ftlContent.substring(concatSetIndex + concatSet.length)
+            const contentAfterSet = ftlContent.substring(concatSetIndex + set.set.length)
             ftlContent = contentBeforeSet + contentAfterSet
           }
         })
-        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, ftlContent)
+        // console.log('ftlContent', ftlContent + '\n')
+        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, ftlContent + '\n')
       }
     })
+  // }
     // uncomment this to check content before writing
     // console.log(ftlContent)
   

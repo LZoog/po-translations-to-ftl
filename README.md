@@ -37,7 +37,7 @@ Arguments:
 * `ftlFile` (required, string) - the name of the .ftl file to be referenced
 * `localeDir` (required, string) - the path to the locale directory containing language directories, which contain an LC_MESSAGES directory with .po files
 * `poFile` (required, string) - the name of the .po file to copy existing translations from
-* `trialRun` (optional, boolean) - if set to true, instead of writing all .ftl files to disk, console log the first two to verify they look as expected
+* `trialRun` (optional, boolean, defaults to false) - if set to true, instead of writing all .ftl files to disk, console log the first two to verify they look as expected
 
 Example:
 ```

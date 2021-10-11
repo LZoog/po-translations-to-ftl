@@ -38,8 +38,8 @@ async function asyncFilter(arr: Array<string>, callback: Function) {
 }
 
 const quotesRegex = /(?<=(["']))(?:(?=(\\?))\2.)*?(?=\1)/
-// selects until the string contains a newline that does not begin with a space or a #
-const untilNewlineWithoutSpaceRegex = /(?:(?!(\n[a-z|#]))[\s\S])*/g
+// selects until the string contains a newline that does not begin with a space, #, or -
+const untilNewlineWithoutSpaceRegex = /(?:(?!(\n[a-z|#|-]))[\s\S])*/g
 const poVarsRegex = /%\(.*?\)s/g
 
 const getPoQuoteString = (string: String | undefined) => {
@@ -111,6 +111,7 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
         // except for blocks where they may begin on the next line (' ='). Needs tweaking for 
         // nested strings with multiple `=` 
         const [ ftlId, engTranslation ] = match.includes(' = ') ? match.split(' = ') : match.split(' =')
+
         setsWithComments.push({
           comment: null,
           ftlId,
@@ -122,6 +123,7 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
         for (let i = index + 1; i < ftlConcatSetsWithComments.length; i++) {
           if (ftlConcatSetsWithComments[i].startsWith('#')) {
             comment += '\n' + ftlConcatSetsWithComments[i]
+            matchIndex = i + 2
           } else {
             const ftlIdAndTranslation = ftlConcatSetsWithComments[i]
             const [ ftlId, engTranslation ] = ftlIdAndTranslation.includes(' = ') ? ftlIdAndTranslation.split(' = ') : match.split(' =')
@@ -131,9 +133,9 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
               engTranslation,
               fullString: comment + '\n' + ftlIdAndTranslation,
             })
+            matchIndex = i + 1
             break
           }
-          matchIndex = i + 2
         }
       }
     }
@@ -155,6 +157,12 @@ const getFtlContentWithTranslations = (ftlSetsWithComments: SetWithComments[], f
   ftlSetsWithComments.forEach((set) => {
     let translationFound = false
     for (const poSet of translationMap) {
+      // TODO:
+      // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a message reference.
+      // when we compare the ftl string to existing po translations, we should replace that part of the ftl string
+      // with what that message reference equals
+
+      // ftl should be in curly quotes, but we should also normalize straight quotes with curly for translation comparison
       if (poSet.eng === set.engTranslation && poSet.translation !== "") {
         ftlContent = ftlContent.replace(set.engTranslation, poSet.translation)
         translationFound = true
@@ -163,7 +171,7 @@ const getFtlContentWithTranslations = (ftlSetsWithComments: SetWithComments[], f
     }
     // NOTE/TODO: this will set references with text between when these should be filtered out, e.g. `{ a } other copy { b }`
     if (!translationFound && !(set.engTranslation.startsWith('{') && set.engTranslation.endsWith('}'))) {
-      // delete the line if no existing translation is found
+      // delete the line if no existing translation is found or if the line doesn't start/end with a variable reference
       const concatSetIndex = ftlContent.indexOf(set.fullString)
       const contentBeforeSet = ftlContent.substring(0, concatSetIndex - 1)
       const contentAfterSet = ftlContent.substring(concatSetIndex + set.fullString.length)
@@ -176,8 +184,8 @@ const getFtlContentWithTranslations = (ftlSetsWithComments: SetWithComments[], f
 
 const getLangDirs = async () => {
   const localeDirContent = await fs.readdir(localeDir)
-  // only include directories and exclude the 'templates' + 'en' directory
-  const allLangDirs: String[] = (await asyncFilter(localeDirContent, async(fileOrDirName: string) => (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory())).filter(directory => directory !== 'templates' && directory !== 'en')
+  // only include directories and exclude the 'templates' + 'en' + 'en-US' directory
+  const allLangDirs: String[] = (await asyncFilter(localeDirContent, async(fileOrDirName: string) => (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory())).filter(directory => directory !== 'templates' && directory !== 'en' && directory !== 'en-US')
   return trialRun ? [allLangDirs[0], allLangDirs[1]] : allLangDirs
 }
 
@@ -188,18 +196,19 @@ const getLangDirs = async () => {
     langDirs.forEach((directory) => {
       const poContent = fs.readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`).toString('utf-8')
       const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
-    
+
       // an array of every line from the ftl file except blank lines. A multi-line ftl block will be one string
       const ftlConcatSetsWithComments = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '')
-      ftlConcatSetsWithComments.splice(0, 4) // header comment
 
+      // TODO: need to make this more dynamic 🙃
+      const topOfFileComments = ftlConcatSetsWithComments.splice(0, 7).join('\n')
       const ftlSetsWithComments = getSetsWithComments(ftlConcatSetsWithComments)
       const ftlContentWithTranslations = getFtlContentWithTranslations(ftlSetsWithComments, ftlContent, poContent)
 
       if (trialRun) {
-        console.log(`==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n`, ftlContentWithTranslations + '\n')
+        console.log(`==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n`, topOfFileComments + '\n' + ftlContentWithTranslations + '\n')
       } else {
-        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, ftlContentWithTranslations + '\n')
+        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, topOfFileComments + '\n' + ftlContentWithTranslations + '\n')
       }
     })
   } catch(error) {

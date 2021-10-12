@@ -96,12 +96,17 @@ interface SetWithComments {
   /** comment + ftlId + engTranslation */
   fullString: string
 }
+interface BrandPlaceholder {
+  ftlId: string;
+  engTranslation: string;
+}
 
 /**
  * @param ftlConcatSetsWithComments Contains every single line (including each commented line) or multi-line block from the ftl file except blank lines.
  */
 const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
   const setsWithComments: SetWithComments[] = []
+  const brandPlaceholders: BrandPlaceholder[] = []
   let matchIndex = 0
   ftlConcatSetsWithComments.forEach((match, index) => {
     // don't iterate over match if it's been reached in the inner loop
@@ -112,6 +117,13 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
         // nested strings with multiple `=` 
         const [ ftlId, engTranslation ] = match.includes(' = ') ? match.split(' = ') : match.split(' =')
 
+        if (ftlId.startsWith('-') && ftlId.includes('brand')) {
+          const brand = engTranslation.replace('\n', '').trim()
+          brandPlaceholders.push({
+            ftlId,
+            engTranslation: brand
+          })
+        }
         setsWithComments.push({
           comment: null,
           ftlId,
@@ -127,6 +139,12 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
           } else {
             const ftlIdAndTranslation = ftlConcatSetsWithComments[i]
             const [ ftlId, engTranslation ] = ftlIdAndTranslation.includes(' = ') ? ftlIdAndTranslation.split(' = ') : match.split(' =')
+
+            if (ftlId.startsWith('-') && ftlId.includes('brand')) {
+              brandPlaceholders.push({
+                ftlId, engTranslation
+              })
+            }
             setsWithComments.push({
               comment,
               ftlId,
@@ -140,10 +158,15 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
       }
     }
   })
-  return setsWithComments
+  return { setsWithComments, brandPlaceholders }
 }
 
-const getFtlContentWithTranslations = (ftlSetsWithComments: SetWithComments[], ftlContent: String, poContent: String) => {
+const getFtlContentWithTranslations = (
+    ftlSetsWithComments: SetWithComments[], 
+    brandPlaceholders: BrandPlaceholder[], 
+    ftlContent: String, 
+    poContent: String
+  ) => {
   const poMsgConcatSets = convertPoVarsToFltVars(poContent).split('\n\n')
   
   const translationMap = poMsgConcatSets.map((concatSet) => {
@@ -157,14 +180,23 @@ const getFtlContentWithTranslations = (ftlSetsWithComments: SetWithComments[], f
   ftlSetsWithComments.forEach((set) => {
     let translationFound = false
     for (const poSet of translationMap) {
-      // TODO:
       // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a message reference.
-      // when we compare the ftl string to existing po translations, we should replace that part of the ftl string
+      // when we compare the ftl string to existing po translations, we replace that part of the ftl string
       // with what that message reference equals
+      let poSetTranslation = poSet.translation
+      let poSetEng = poSet.eng
+      for (const brandPlaceholder of brandPlaceholders) {
+        if (poSetTranslation.includes(brandPlaceholder.engTranslation)) {
+          poSetTranslation = poSet.translation.replace(brandPlaceholder.engTranslation, `{ ${brandPlaceholder.ftlId} }`)
+        }
+        if (poSetEng.includes(brandPlaceholder.engTranslation)) {
+          poSetEng = poSet.eng.replace(brandPlaceholder.engTranslation, `{ ${brandPlaceholder.ftlId} }`)
+        }
+      }
 
-      // ftl should be in curly quotes, but we should also normalize straight quotes with curly for translation comparison
-      if (poSet.eng === set.engTranslation && poSet.translation !== "") {
-        ftlContent = ftlContent.replace(set.engTranslation, poSet.translation)
+      // TODO: ftl should be in curly quotes, but we should also normalize straight quotes with curly for translation comparison
+      if (poSetTranslation !== "" && poSetEng === set.engTranslation) {
+        ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
         translationFound = true
         break
       }
@@ -201,14 +233,16 @@ const getLangDirs = async () => {
       const ftlConcatSetsWithComments = ftlContent.match(untilNewlineWithoutSpaceRegex)!.filter(set => set !== '')
 
       // TODO: need to make this more dynamic 🙃
-      const topOfFileComments = ftlConcatSetsWithComments.splice(0, 7).join('\n')
-      const ftlSetsWithComments = getSetsWithComments(ftlConcatSetsWithComments)
-      const ftlContentWithTranslations = getFtlContentWithTranslations(ftlSetsWithComments, ftlContent, poContent)
+      // This is equal to the number of comments above the first comment that should attach to an ftl id.
+      ftlConcatSetsWithComments.splice(0, 7).join('\n')
+      const { setsWithComments: ftlSetsWithComments, brandPlaceholders } = getSetsWithComments(ftlConcatSetsWithComments)
+      const ftlContentWithTranslations = getFtlContentWithTranslations(ftlSetsWithComments, brandPlaceholders, ftlContent, poContent)
 
       if (trialRun) {
-        console.log(`==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n`, topOfFileComments + '\n' + ftlContentWithTranslations + '\n')
+        console.log(`==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n` + ftlContentWithTranslations + '\n')
       } else {
-        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, topOfFileComments + '\n' + ftlContentWithTranslations + '\n')
+        fs.writeFile(`${localeDir}/${directory}/${ftlFile}`, ftlContentWithTranslations + '\n')
+        fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
       }
     })
   } catch(error) {

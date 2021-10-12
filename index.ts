@@ -1,9 +1,10 @@
 import fs from 'fs-extra'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
+
 interface FtlSetWithComments {
   /** the single line or multi-line comment if one exists */
-  comment: String | null
+  comment: string | null
   ftlId: string
   engTranslation: string
   /** comment + ftlId + engTranslation */
@@ -210,17 +211,17 @@ const getFtlContentWithTranslations = (
       // with what that message reference equals
       let poSetTranslation = poSet.translation
       let poSetEng = poSet.eng
-      for (const BrandReference of brandReferences) {
-        if (poSetTranslation.includes(BrandReference.engTranslation)) {
+      for (const brandReference of brandReferences) {
+        if (poSetTranslation.includes(brandReference.engTranslation)) {
           poSetTranslation = poSet.translation.replace(
-            BrandReference.engTranslation,
-            `{ ${BrandReference.ftlId} }`
+            brandReference.engTranslation,
+            `{ ${brandReference.ftlId} }`
           )
         }
-        if (poSetEng.includes(BrandReference.engTranslation)) {
+        if (poSetEng.includes(brandReference.engTranslation)) {
           poSetEng = poSet.eng.replace(
-            BrandReference.engTranslation,
-            `{ ${BrandReference.ftlId} }`
+            brandReference.engTranslation,
+            `{ ${brandReference.ftlId} }`
           )
         }
       }

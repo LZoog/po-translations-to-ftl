@@ -1,7 +1,7 @@
 import fs from 'fs-extra'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
-interface SetWithComments {
+interface FtlSetWithComments {
   /** the single line or multi-line comment if one exists */
   comment: String | null
   ftlId: string
@@ -9,7 +9,7 @@ interface SetWithComments {
   /** comment + ftlId + engTranslation */
   fullString: string
 }
-interface BrandPlaceholder {
+interface BrandReference {
   ftlId: string
   engTranslation: string
 }
@@ -64,9 +64,23 @@ async function asyncFilter(arr: Array<string>, callback: Function) {
   ).filter((i) => i !== fail)
 }
 
+// we can grab the fluent ID/message by using what's on the left/hand side of ' = '
+// except for blocks where they may begin on the next line (' ='). Needs tweaking for
+// nested strings with multiple `=`
+const getFtlIdAndString = (match: String) => {
+  const [ftlId, engTranslation] = match.includes(' = ')
+    ? match.split(' = ')
+    : match.split(' =')
+  return { ftlId, engTranslation }
+}
+
+const isBrandReference = (ftlId: String) =>
+  ftlId.startsWith('-') && ftlId.includes('brand')
+
 const getPoQuoteString = (string: String | undefined) => {
   if (string) {
-    // some msgids begin with `""` and have the string on the next line, oftentimes with nested quotes and newlines. Remove `msgid ""\n` and combine separated lines if so.
+    // some msgids begin with `""` and have the string on the next line, oftentimes with nested quotes and newlines.
+    // Remove `msgid ""\n` and combine separated lines if so.
     if (string.includes('msgid ""\n"')) {
       string = string.split('msgid ""\n').pop()
     }
@@ -112,31 +126,27 @@ const convertPoVarsToFltVars = (poContent: String) => {
 }
 
 /**
- * @param ftlConcatSetsWithComments Contains every single line (including each commented line) or multi-line block from the ftl file except blank lines.
+ * @param ftlConcatSetsWithComments Contains every single line (including each commented line) or
+ *  multi-line block from the ftl file except blank lines.
  */
-const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
-  const setsWithComments: SetWithComments[] = []
-  const brandPlaceholders: BrandPlaceholder[] = []
+const getFtlSets = (ftlConcatSetsWithComments: string[]) => {
+  const ftlSetsWithComments: FtlSetWithComments[] = []
+  const brandReferences: BrandReference[] = []
   let matchIndex = 0
   ftlConcatSetsWithComments.forEach((match, index) => {
     // don't iterate over match if it's been reached in the inner loop
     if (matchIndex <= index) {
       if (!match.startsWith('#')) {
-        // we can grab the fluent ID/message by using what's on the left/hand side of ' = '
-        // except for blocks where they may begin on the next line (' ='). Needs tweaking for
-        // nested strings with multiple `=`
-        const [ftlId, engTranslation] = match.includes(' = ')
-          ? match.split(' = ')
-          : match.split(' =')
+        const { ftlId, engTranslation } = getFtlIdAndString(match)
 
-        if (ftlId.startsWith('-') && ftlId.includes('brand')) {
+        if (isBrandReference(ftlId)) {
           const brand = engTranslation.replace('\n', '').trim()
-          brandPlaceholders.push({
+          brandReferences.push({
             ftlId,
             engTranslation: brand,
           })
         }
-        setsWithComments.push({
+        ftlSetsWithComments.push({
           comment: null,
           ftlId,
           engTranslation,
@@ -144,23 +154,23 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
         })
       } else {
         let comment = match
+        // if the match is a comment, include next lines until reaching the first non-comment
         for (let i = index + 1; i < ftlConcatSetsWithComments.length; i++) {
           if (ftlConcatSetsWithComments[i].startsWith('#')) {
             comment += '\n' + ftlConcatSetsWithComments[i]
             matchIndex = i + 2
           } else {
             const ftlIdAndTranslation = ftlConcatSetsWithComments[i]
-            const [ftlId, engTranslation] = ftlIdAndTranslation.includes(' = ')
-              ? ftlIdAndTranslation.split(' = ')
-              : match.split(' =')
+            const { ftlId, engTranslation } =
+              getFtlIdAndString(ftlIdAndTranslation)
 
-            if (ftlId.startsWith('-') && ftlId.includes('brand')) {
-              brandPlaceholders.push({
+            if (isBrandReference(ftlId)) {
+              brandReferences.push({
                 ftlId,
                 engTranslation,
               })
             }
-            setsWithComments.push({
+            ftlSetsWithComments.push({
               comment,
               ftlId,
               engTranslation,
@@ -173,12 +183,12 @@ const getSetsWithComments = (ftlConcatSetsWithComments: string[]) => {
       }
     }
   })
-  return { setsWithComments, brandPlaceholders }
+  return { ftlSetsWithComments, brandReferences }
 }
 
 const getFtlContentWithTranslations = (
-  ftlSetsWithComments: SetWithComments[],
-  brandPlaceholders: BrandPlaceholder[],
+  ftlSetsWithComments: FtlSetWithComments[],
+  brandReferences: BrandReference[],
   ftlContent: String,
   poContent: String
 ) => {
@@ -195,22 +205,22 @@ const getFtlContentWithTranslations = (
   ftlSetsWithComments.forEach((set) => {
     let translationFound = false
     for (const poSet of translationMap) {
-      // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a message reference.
+      // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a brand message reference.
       // when we compare the ftl string to existing po translations, we replace that part of the ftl string
       // with what that message reference equals
       let poSetTranslation = poSet.translation
       let poSetEng = poSet.eng
-      for (const brandPlaceholder of brandPlaceholders) {
-        if (poSetTranslation.includes(brandPlaceholder.engTranslation)) {
+      for (const BrandReference of brandReferences) {
+        if (poSetTranslation.includes(BrandReference.engTranslation)) {
           poSetTranslation = poSet.translation.replace(
-            brandPlaceholder.engTranslation,
-            `{ ${brandPlaceholder.ftlId} }`
+            BrandReference.engTranslation,
+            `{ ${BrandReference.ftlId} }`
           )
         }
-        if (poSetEng.includes(brandPlaceholder.engTranslation)) {
+        if (poSetEng.includes(BrandReference.engTranslation)) {
           poSetEng = poSet.eng.replace(
-            brandPlaceholder.engTranslation,
-            `{ ${brandPlaceholder.ftlId} }`
+            BrandReference.engTranslation,
+            `{ ${BrandReference.ftlId} }`
           )
         }
       }
@@ -275,11 +285,12 @@ const getLangDirs = async () => {
       // TODO: need to make this more dynamic 🙃
       // This is equal to the number of comments above the first comment that should attach to an ftl id.
       ftlConcatSetsWithComments.splice(0, 7).join('\n')
-      const { setsWithComments: ftlSetsWithComments, brandPlaceholders } =
-        getSetsWithComments(ftlConcatSetsWithComments)
+      const { ftlSetsWithComments, brandReferences } = getFtlSets(
+        ftlConcatSetsWithComments
+      )
       const ftlContentWithTranslations = getFtlContentWithTranslations(
         ftlSetsWithComments,
-        brandPlaceholders,
+        brandReferences,
         ftlContent,
         poContent
       )

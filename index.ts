@@ -308,6 +308,7 @@ const getLangDirs = async () => {
           ftlContentWithTranslations + '\n'
         )
         fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
+        fs.writeFile(`${localeDir}/templates/${ftlFile}`, ftlContent)
       }
     })
   } catch (error) {

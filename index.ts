@@ -227,22 +227,23 @@ const getFtlContentWithTranslations = (
         }
       }
 
-      // If the ftl English translation contains curly quotes or apostrophes, we should convert
-      // them to straight quotes and compare both versions to the po translations
-      const ftlEngWithStraightQuotes = set.engTranslation
-        .replace('’', "'")
-        .replace('‘', "'")
-        .replace('“', '"')
-        .replace('”', '"')
+      if (poSetTranslation !== '') {
+        // If the ftl English translation contains curly quotes or apostrophes, we should convert
+        // them to straight quotes and compare both versions to the po translations
+        const ftlEngWithStraightQuotes = set.engTranslation
+          .replace('’', "'")
+          .replace('‘', "'")
+          .replace('“', '"')
+          .replace('”', '"')
 
-      if (
-        poSetTranslation !== '' &&
-        (poSetEng === set.engTranslation ||
-          poSetEng === ftlEngWithStraightQuotes)
-      ) {
-        ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
-        translationFound = true
-        break
+        if (
+          poSetEng === set.engTranslation ||
+          poSetEng === ftlEngWithStraightQuotes
+        ) {
+          ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
+          translationFound = true
+          break
+        }
       }
     }
     // NOTE/TODO: this will set references with text between when these should be filtered out, e.g. `{ a } other copy { b }`

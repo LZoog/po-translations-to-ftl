@@ -206,11 +206,12 @@ const getFtlContentWithTranslations = (
   ftlSetsWithComments.forEach((set) => {
     let translationFound = false
     for (const poSet of translationMap) {
+      let poSetTranslation = poSet.translation
+      let poSetEng = poSet.eng
+
       // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a brand message reference.
       // when we compare the ftl string to existing po translations, we replace that part of the ftl string
       // with what that message reference equals
-      let poSetTranslation = poSet.translation
-      let poSetEng = poSet.eng
       for (const brandReference of brandReferences) {
         if (poSetTranslation.includes(brandReference.engTranslation)) {
           poSetTranslation = poSet.translation.replace(
@@ -226,9 +227,19 @@ const getFtlContentWithTranslations = (
         }
       }
 
-      // TODO: ftl should be in curly quotes, but we should also normalize straight
-      // quotes with curly for translation comparison
-      if (poSetTranslation !== '' && poSetEng === set.engTranslation) {
+      // If the ftl English translation contains curly quotes or apostrophes, we should convert
+      // them to straight quotes and compare both versions to the po translations
+      const ftlEngWithStraightQuotes = set.engTranslation
+        .replace('’', "'")
+        .replace('‘', "'")
+        .replace('“', '"')
+        .replace('”', '"')
+
+      if (
+        poSetTranslation !== '' &&
+        (poSetEng === set.engTranslation ||
+          poSetEng === ftlEngWithStraightQuotes)
+      ) {
         ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
         translationFound = true
         break
@@ -269,13 +280,11 @@ const getLangDirs = async () => {
 ;(async () => {
   try {
     const langDirs = await getLangDirs()
+    const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
 
     langDirs.forEach((directory) => {
       const poContent = fs
         .readFileSync(`${localeDir}/${directory}/LC_MESSAGES/${poFile}`)
-        .toString('utf-8')
-      const ftlContent = fs
-        .readFileSync(`${ftlDir}/${ftlFile}`)
         .toString('utf-8')
 
       // an array of every line from the ftl file except blank lines. A multi-line ftl block will be one string
@@ -303,14 +312,39 @@ const getLangDirs = async () => {
             '\n'
         )
       } else {
-        fs.writeFile(
-          `${localeDir}/${directory}/${ftlFile}`,
-          ftlContentWithTranslations + '\n'
-        )
-        fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
-        fs.writeFile(`${localeDir}/templates/${ftlFile}`, ftlContent)
+        try {
+          fs.writeFile(
+            `${localeDir}/${directory}/${ftlFile}`,
+            ftlContentWithTranslations + '\n'
+          )
+          console.log(
+            `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`
+          )
+        } catch (e) {
+          console.log('Error writing ftl file: ', e)
+        }
       }
     })
+
+    if (!trialRun) {
+      try {
+        fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
+        console.log(
+          `\nSuccessfully copied ${ftlDir}/${ftlFile} to ${localeDir}/en/${ftlFile}`
+        )
+      } catch (e) {
+        console.log('Error copying file: ', e)
+      }
+
+      try {
+        fs.writeFile(`${localeDir}/templates/${ftlFile}`, ftlContent)
+        console.log(
+          `Successfully copied ${ftlDir}/${ftlFile} to ${localeDir}/templates/${ftlFile}`
+        )
+      } catch (e) {
+        console.log('Error copying file: ', e)
+      }
+    }
   } catch (error) {
     console.log(error)
   }

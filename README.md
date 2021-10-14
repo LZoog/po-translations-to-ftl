@@ -10,9 +10,10 @@ This tool currently assumes:
 
 Known things that won't transfer over properly since we haven't had a use case yet:
 
-- Need to fix a bug where things don't transfer over if there's not at least one brand name
+- Only message references that start with `-` and contain the word `brand` replace existing `.po` strings. We might want to update this to also use the word `product`
 - If the number of comments above the brand comment is less or greater than 7, the line under "🙃" should be updated
-- Lines beginning and ending with variables containing copy between, like `%(my-name)s is a cool %(description)s`
+- There must be at least one brand message reference or else the top of the output is wonky
+- Lines beginning and ending with variables containing copy between, like `%(my-name)s is a cool %(description)s`, will be transferred when they should not
 - Nested strings with multiple `=` in `.ftl` files, such as:
 
 ```

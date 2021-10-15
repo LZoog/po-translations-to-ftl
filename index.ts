@@ -134,6 +134,7 @@ const getFtlSets = (ftlConcatSetsWithComments: string[]) => {
   const ftlSetsWithComments: FtlSetWithComments[] = []
   const brandReferences: BrandReference[] = []
   let matchIndex = 0
+
   ftlConcatSetsWithComments.forEach((match, index) => {
     // don't iterate over match if it's been reached in the inner loop
     if (matchIndex <= index) {
@@ -237,8 +238,8 @@ const getFtlContentWithTranslations = (
           .replace('”', '"')
 
         if (
-          poSetEng === set.engTranslation ||
-          poSetEng === ftlEngWithStraightQuotes
+          poSetEng.trim() === set.engTranslation.trim() ||
+          poSetEng.trim() === ftlEngWithStraightQuotes.trim()
         ) {
           ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
           translationFound = true

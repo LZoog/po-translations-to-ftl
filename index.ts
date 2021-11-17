@@ -11,7 +11,7 @@ interface FtlSetWithComments {
   /** comment + ftlId + engTranslation */
   fullString: string
 }
-interface BrandReference {
+interface TermReference {
   ftlId: string
   engTranslation: string
 }
@@ -94,11 +94,11 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
 
 const getFtlSets = (ftlEntries: Entry[]) => {
   const ftlSetsWithComments: FtlSetWithComments[] = []
-  const brandReferences: BrandReference[] = []
+  const termReferences: TermReference[] = []
 
   ftlEntries.forEach((entry) => {
     if (entry.type === 'Term') {
-      brandReferences.push({
+      termReferences.push({
         ftlId: `{ -${entry.id.name} }`,
         engTranslation: entry.value.elements[0].value as string,
       })
@@ -135,19 +135,19 @@ const getFtlSets = (ftlEntries: Entry[]) => {
     }
   })
 
-  return { ftlSetsWithComments, brandReferences }
+  return { ftlSetsWithComments, termReferences }
 }
 
-const getFtlContentWithTranslations = (
+const getTranslatedFtl = (
   ftlSetsWithComments: FtlSetWithComments[],
-  brandReferences: BrandReference[],
+  termReferences: TermReference[],
   ftlContent: string,
   poContent: Buffer
 ) => {
+  let translatedFtl = ftlContent
   const parsedPo = gettextParser.po.parse(poContent).translations['']
-  console.log('parsedPo!!', parsedPo)
 
-  let translationMap = []
+  let translationMap: { eng: string; translation: string }[] = []
   for (const poId in parsedPo) {
     const translation = parsedPo[poId].msgstr[0]
     if (translation) {
@@ -160,65 +160,73 @@ const getFtlContentWithTranslations = (
     }
   }
 
-  // ftlSetsWithComments.forEach((set) => {
-  //   let translationFound = false
-  //   for (const poSet of translationMap) {
-  //     let poSetTranslation = poSet.translation
-  //     let poSetEng = poSet.eng
+  ftlSetsWithComments.forEach((set) => {
+    let translationFound = false
+    for (const poSet of translationMap) {
+      let poSetTranslation = poSet.translation
+      let poSetEng = poSet.eng
 
-  //     // if ftlId begins with `{ -`, like `{ -brand-mozilla }`, it's a brand message reference.
-  //     // when we compare the ftl string to existing po translations, we replace that part of the ftl string
-  //     // with what that message reference equals
-  //     for (const brandReference of brandReferences) {
-  //       if (poSetTranslation.includes(brandReference.engTranslation)) {
-  //         poSetTranslation = poSet.translation.replace(
-  //           brandReference.engTranslation,
-  //           `{ ${brandReference.ftlId} }`
-  //         )
-  //       }
-  //       if (poSetEng.includes(brandReference.engTranslation)) {
-  //         poSetEng = poSet.eng.replace(
-  //           brandReference.engTranslation,
-  //           `{ ${brandReference.ftlId} }`
-  //         )
-  //       }
-  //     }
+      // when we compare the ftl string to existing po translations, we replace term references in
+      // the ftl string with its english translation
+      for (const termReference of termReferences) {
+        if (poSetTranslation.includes(termReference.engTranslation)) {
+          poSetTranslation = poSet.translation.replace(
+            termReference.engTranslation,
+            termReference.ftlId
+          )
+        }
+        if (poSetEng.includes(termReference.engTranslation)) {
+          poSetEng = poSet.eng.replace(
+            termReference.engTranslation,
+            termReference.ftlId
+          )
+        }
+      }
 
-  //     if (poSetTranslation !== '') {
-  //       // If the ftl English translation contains curly quotes or apostrophes, we should convert
-  //       // them to straight quotes and compare both versions to the po translations
-  //       const ftlEngWithStraightQuotes = set.engTranslation
-  //         .replace('’', "'")
-  //         .replace('‘', "'")
-  //         .replace('“', '"')
-  //         .replace('”', '"')
+      if (poSetTranslation !== '') {
+        // If the ftl English translation contains curly quotes or apostrophes, we convert
+        // them to straight quotes and compare both versions to the po translations
+        const ftlEngWithStraightQuotes = set.engTranslation
+          .replace('’', "'")
+          .replace('‘', "'")
+          .replace('“', '"')
+          .replace('”', '"')
 
-  //       if (
-  //         poSetEng.trim() === set.engTranslation.trim() ||
-  //         poSetEng.trim() === ftlEngWithStraightQuotes.trim()
-  //       ) {
-  //         ftlContent = ftlContent.replace(set.engTranslation, poSetTranslation)
-  //         translationFound = true
-  //         break
-  //       }
-  //     }
-  //   }
-  //   // NOTE/TODO: this will set references with text between when these should be filtered out, e.g. `{ a } other copy { b }`
-  //   if (
-  //     !translationFound &&
-  //     !(set.engTranslation.startsWith('{') && set.engTranslation.endsWith('}'))
-  //   ) {
-  //     // delete the line if no existing translation is found or if the line doesn't start/end with a variable reference
-  //     const concatSetIndex = ftlContent.indexOf(set.fullString)
-  //     const contentBeforeSet = ftlContent.substring(0, concatSetIndex - 1)
-  //     const contentAfterSet = ftlContent.substring(
-  //       concatSetIndex + set.fullString.length
-  //     )
-  //     ftlContent = contentBeforeSet + contentAfterSet
-  //   }
-  // })
+        if (
+          poSetEng.trim() === set.engTranslation.trim() ||
+          poSetEng.trim() === ftlEngWithStraightQuotes.trim()
+        ) {
+          translatedFtl = translatedFtl.replace(
+            set.engTranslation,
+            poSetTranslation
+          )
+          translationFound = true
+          break
+        }
+      }
+    }
+    // NOTE/TODO: this will set references with text between when these should be filtered
+    // out, e.g. `{ a } other copy { b }`
+    if (
+      !translationFound &&
+      !(set.engTranslation.startsWith('{') && set.engTranslation.endsWith('}'))
+    ) {
+      // delete the line if no existing translation is found or if the line doesn't start/end with
+      // a term reference
+      const concatSetIndex = translatedFtl.indexOf(set.fullString)
+      console.log('concatSetIndex', concatSetIndex)
+      if (concatSetIndex === -1) {
+        console.log(set.fullString)
+      }
+      const contentBeforeSet = translatedFtl.substring(0, concatSetIndex - 1)
+      const contentAfterSet = translatedFtl.substring(
+        concatSetIndex + set.fullString.length
+      )
+      translatedFtl = contentBeforeSet + contentAfterSet
+    }
+  })
 
-  return ftlContent
+  return translatedFtl
 }
 
 const getLangDirs = async () => {
@@ -241,61 +249,62 @@ const getLangDirs = async () => {
     const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
 
     const ftlEntries = parse(ftlContent, {}).body
-    const { ftlSetsWithComments, brandReferences } = getFtlSets(ftlEntries)
+    const { ftlSetsWithComments, termReferences } = getFtlSets(ftlEntries)
 
     langDirs.forEach((directory) => {
       const poContent = fs.readFileSync(
         `${localeDir}/${directory}/LC_MESSAGES/${poFile}`
       )
 
-      const ftlContentWithTranslations = getFtlContentWithTranslations(
+      const translatedFtl = getTranslatedFtl(
         ftlSetsWithComments,
-        brandReferences,
+        termReferences,
         ftlContent,
         poContent
       )
+
+      // write to individual directories
+      if (trialRun) {
+        console.log(
+          `==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n` +
+            translatedFtl +
+            '\n'
+        )
+      } else {
+        try {
+          fs.writeFile(
+            `${localeDir}/${directory}/${ftlFile}`,
+            translatedFtl + '\n'
+          )
+          console.log(
+            `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`
+          )
+        } catch (e) {
+          console.log('Error writing ftl file: ', e)
+        }
+      }
     })
 
-    // if (trialRun) {
-    // console.log(
-    //   `==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n` +
-    //     ftlContentWithTranslations +
-    //     '\n'
-    // )
-    // } else {
-    //   try {
-    //     fs.writeFile(
-    //       `${localeDir}/${directory}/${ftlFile}`,
-    //       ftlContentWithTranslations + '\n'
-    //     )
-    //     console.log(
-    //       `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`
-    //     )
-    //   } catch (e) {
-    //     console.log('Error writing ftl file: ', e)
-    //   }
-    // }
-    // })
-    // }
+    // write to 'en' and 'templates' directory
+    if (!trialRun) {
+      try {
+        fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
+        console.log(
+          `\nSuccessfully copied ${ftlDir}/${ftlFile} to ${localeDir}/en/${ftlFile}`
+        )
+      } catch (e) {
+        console.log('Error copying file: ', e)
+      }
 
-    // if (!trialRun) {
-    //   try {
-    //     fs.writeFile(`${localeDir}/en/${ftlFile}`, ftlContent)
-    //     console.log(
-    //       `\nSuccessfully copied ${ftlDir}/${ftlFile} to ${localeDir}/en/${ftlFile}`
-    //     )
-    //   } catch (e) {
-    //     console.log('Error copying file: ', e)
-    //   }
-
-    //   try {
-    //     fs.writeFile(`${localeDir}/templates/${ftlFile}`, ftlContent)
-    //     console.log(
-    //       `Successfully copied ${ftlDir}/${ftlFile} to ${localeDir}/templates/${ftlFile}`
-    //     )
-    //   } catch (e) {
-    //     console.log('Error copying file: ', e)
-    //   }
+      try {
+        fs.writeFile(`${localeDir}/templates/${ftlFile}`, ftlContent)
+        console.log(
+          `Successfully copied ${ftlDir}/${ftlFile} to ${localeDir}/templates/${ftlFile}`
+        )
+      } catch (e) {
+        console.log('Error copying file: ', e)
+      }
+    }
   } catch (error) {
     console.log(error)
   }

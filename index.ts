@@ -2,7 +2,7 @@ import fs from 'fs-extra'
 import yargs from 'yargs'
 import { hideBin } from 'yargs/helpers'
 import gettextParser from 'gettext-parser'
-import { parse, Entry, Identifier } from '@fluent/syntax'
+import { parse, Entry, Identifier, Placeable } from '@fluent/syntax'
 
 interface FtlSet {
   ftlId: string
@@ -95,16 +95,45 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
   return poTranslation
 }
 
+// HACK: this is a special/weird case and can probably be removed (or edited).
+// FxA changed "Firefox Account" to "Firefox account" and some existing ftl files that
+// reference '-product-firefox-account' use an expression for lowercase/uppercase
+// translation. This checks for that and returns the lowercase translation
+const getNestedTranslation = (entry: Entry) => {
+  let nestedTranslation = ''
+  if (
+    // @ts-ignore
+    (entry.id.name === 'product-firefox-account' ||
+      // @ts-ignore
+      entry.id.name === 'product-firefox-accounts') &&
+    // @ts-ignore
+    entry.value?.elements[0].type === 'Placeable'
+  ) {
+    // @ts-ignore
+    const { variants } = entry.value.elements[0].expression
+    for (const variant of variants) {
+      if (variant.key.name === 'lowercase') {
+        nestedTranslation = variant.value.elements[0].value
+        break
+      }
+    }
+  }
+
+  return nestedTranslation
+}
+
 const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
   const ftlSets: FtlSet[] = []
   const termSets: TermSet[] = []
 
   ftlEntries.forEach((entry) => {
     if (entry.type === 'Term') {
+      const nestedTranslation = getNestedTranslation(entry)
       termSets.push({
-        ftlId: entry.id.name,
+        ftlId: `-${entry.id.name}`,
         reference: `{ -${entry.id.name} }`,
-        translation: entry.value.elements[0].value as string,
+        translation:
+          nestedTranslation || (entry.value.elements[0].value as string),
       })
       return
     }
@@ -164,7 +193,7 @@ const getTranslations = (directory: string) => {
   )
   const translationMap = getTranslationMap(poContent)
 
-  let termTranslations: undefined | FtlSet[]
+  let termTranslations: undefined | TermSet[]
 
   if (otherFtlFile) {
     let otherFtlFileContent = ''
@@ -201,7 +230,7 @@ const getTranslatedFtl = (
           translatedFtl += `${termSet.ftlId} = ${termTranslation.translation}\n`
         }
       }
-      // if the terms from `otherFtlFile` doesn't contain an existing matche, default to English
+      // if the terms from `otherFtlFile` doesn't contain an existing match, default to English
       if (!translationFound) {
         translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
       }
@@ -215,7 +244,11 @@ const getTranslatedFtl = (
       let poSetTranslation = poSet.translation
       let poSetEng = poSet.eng
 
-      for (const termSet of engTermSets) {
+      for (const engTermSet of engTermSets) {
+        const termSet =
+          termTranslations?.find((term) => term.ftlId === engTermSet.ftlId) ||
+          engTermSet
+
         // when we compare the ftl string to existing po translations, we replace term references
         // in the ftl string with its english translation
         if (poSetTranslation.includes(termSet.translation)) {

@@ -1,6 +1,6 @@
 # po-translations-to-ftl
 
-This script was created to help the Firefox Accounts team programmatically migrate existing email translations from [gettext](https://www.npmjs.com/package/node-gettext) `.po` files to [Fluent](https://www.npmjs.com/package/@fluent/bundle) `.ftl` files. The original intent was to expand the functionality or make it easy to use elsewhere, but at the time of writing, changes were implemented that are likely specific to FxA / FxA emails.
+This script was created to help the Firefox Accounts team programmatically migrate existing translations from [gettext](https://www.npmjs.com/package/node-gettext) `.po` files to [Fluent](https://www.npmjs.com/package/@fluent/bundle) `.ftl` files. At the time of writing, it may not be very usable outside of FxA due to there likely being unaccounted for edge cases. This also has only been tested on a Mac.
 
 This tool currently assumes:
 
@@ -8,22 +8,7 @@ This tool currently assumes:
 - The `.po` file where translations will be extracted exist in an `LC_MESSAGES` directory within multiple language directories, e.g. `locale/ar/LC_MESSAGES/my-file.po` and `locale/es/LC_MESSAGES/my-file.po`
 - The strings set in your `.ftl` file match the `msgid` in your `.po` files
 
-Known things that won't transfer over properly since we haven't had a use case yet:
-
-- Only message references that start with `-` and contain the word `brand` replace existing `.po` strings. We might want to update this to also use the word `product`
-- If the number of comments above the brand comment is less or greater than 7, the line under "🙃" should be updated
-- There must be at least one brand message reference or else the top of the output is wonky
-- Lines beginning and ending with variables containing copy between, like `%(my-name)s is a cool %(description)s`, will be transferred when they should not
-- Nested strings with multiple `=` in `.ftl` files, such as:
-
-```
-avatar-your-avatar =
-  .alt = Your avatar
-```
-
-Use at your own risk, as outlined here this is pretty rudimentary and there's almost certainly unaccounted for edge cases.
-
-This has only been tested on a Mac.
+NOTE: This tool currently _writes_ .ftl files, functionality needs to be expanded to account for existing .ftl files that only require appending new Fluent IDs and translations.
 
 ## Installation
 
@@ -43,10 +28,11 @@ Arguments:
 - `ftlFile` (required, string) - the name of the .ftl file to be referenced
 - `localeDir` (required, string) - the path to the locale directory containing language directories, which contain an LC_MESSAGES directory with .po files
 - `poFile` (required, string) - the name of the .po file to copy existing translations from
+- `otherFtlFile` (optional, string) - The name of an existing .ftl file that may contain translated terms, e.g. "-product-firefox-account", that we can refer to for possible translations. If this is not supplied or no match is found, the English version will be output
 - `trialRun` (optional, boolean, defaults to false) - if set to true, instead of writing all .ftl files to disk, console log the first two to verify they look as expected
 
 Example:
 
 ```
-npm start -- --ftlDir=../fxa/packages/fxa-auth-server/public/locales/en --ftlFile=auth.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po --trialRun=true
+npm start -- --ftlDir=../fxa/packages/fxa-auth-server/public/locales/en --ftlFile=auth.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po --otherFtlFile=settings.ftl --trialRun=true
 ```

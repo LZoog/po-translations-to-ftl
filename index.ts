@@ -99,8 +99,8 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
 // FxA changed "Firefox Account" to "Firefox account" and some existing ftl files that
 // reference '-product-firefox-account' use an expression for lowercase/uppercase
 // translation. This checks for that and returns the lowercase translation
-const getNestedTranslation = (entry: Entry) => {
-  let nestedTranslation = ''
+const getFxATranslation = (entry: Entry) => {
+  let fxaTranslation = ''
   if (
     // @ts-ignore
     (entry.id.name === 'product-firefox-account' ||
@@ -113,13 +113,23 @@ const getNestedTranslation = (entry: Entry) => {
     const { variants } = entry.value.elements[0].expression
     for (const variant of variants) {
       if (variant.key.name === 'lowercase') {
-        nestedTranslation = variant.value.elements[0].value
+        fxaTranslation = variant.value.elements[0].value
         break
       }
     }
   }
+  // if 'product-firefox-accounts' wasn't nested and we're referring to the
+  // English word "Accounts", at least we can lowercase it
+  // @ts-ignore
+  if (!fxaTranslation && entry.id.name === 'product-firefox-accounts') {
+    // @ts-ignore
+    fxaTranslation = (entry.value.elements[0].value as string).replace(
+      'Accounts',
+      'accounts'
+    )
+  }
 
-  return nestedTranslation
+  return fxaTranslation
 }
 
 const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
@@ -128,12 +138,14 @@ const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
 
   ftlEntries.forEach((entry) => {
     if (entry.type === 'Term') {
-      const nestedTranslation = getNestedTranslation(entry)
+      // HACK: see comment above fn
+      const fxaTranslation = getFxATranslation(entry)
+
       termSets.push({
         ftlId: `-${entry.id.name}`,
         reference: `{ -${entry.id.name} }`,
         translation:
-          nestedTranslation || (entry.value.elements[0].value as string),
+          fxaTranslation || (entry.value.elements[0].value as string),
       })
       return
     }
@@ -303,7 +315,7 @@ const getLangDirs = async () => {
     (directory) =>
       directory !== 'templates' && directory !== 'en' && directory !== 'en-US'
   )
-  return trialRun ? [allLangDirs[0], allLangDirs[1]] : allLangDirs
+  return trialRun ? [allLangDirs[44]] : allLangDirs
 }
 
 ;(async () => {

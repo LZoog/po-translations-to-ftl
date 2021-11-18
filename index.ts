@@ -9,6 +9,10 @@ interface FtlSet {
   translation: string
 }
 
+type TermSet = FtlSet & {
+  reference: string
+}
+
 const poVarsRegex = /%\(.*?\)s/g
 
 const license = `# This Source Code Form is subject to the terms of the Mozilla Public\n# License, v. 2.0. If a copy of the MPL was not distributed with this\n# file, You can obtain one at http://mozilla.org/MPL/2.0/.\n\n`
@@ -93,12 +97,13 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
 
 const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
   const ftlSets: FtlSet[] = []
-  const termReferences: FtlSet[] = []
+  const termSets: TermSet[] = []
 
   ftlEntries.forEach((entry) => {
     if (entry.type === 'Term') {
-      termReferences.push({
-        ftlId: `{ -${entry.id.name} }`,
+      termSets.push({
+        ftlId: entry.id.name,
+        reference: `{ -${entry.id.name} }`,
         translation: entry.value.elements[0].value as string,
       })
       return
@@ -130,9 +135,9 @@ const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
 
   // Some terms may contain others, e.g. "Firefox" and "Firefox accounts"
   // Since we replace strings in array order, we sort the array by string length
-  termReferences.sort((a, b) => b.translation.length - a.translation.length)
+  termSets.sort((a, b) => b.translation.length - a.translation.length)
 
-  return { ftlSets, termReferences }
+  return { ftlSets, termSets }
 }
 
 const getTranslationMap = (poContent: Buffer) => {
@@ -169,7 +174,7 @@ const getTranslations = (directory: string) => {
         .readFileSync(`${localeDir}/${directory}/${otherFtlFile}`)
         .toString('utf-8')
       const otherFtlEntries = parse(otherFtlFileContent, {}).body
-      termTranslations = getFtlSets(otherFtlEntries, true).termReferences
+      termTranslations = getFtlSets(otherFtlEntries, true).termSets
     } catch (e) {
       // noop
     }
@@ -178,59 +183,49 @@ const getTranslations = (directory: string) => {
   return { translationMap, termTranslations }
 }
 
-const isMessageReference = (translation: string) =>
-  translation.startsWith('{') &&
-  translation.endsWith('}') &&
-  !translation.slice(1, -1).includes('}')
-
 const getTranslatedFtl = (
   ftlSets: FtlSet[],
-  engTermReferences: FtlSet[],
+  engTermSets: TermSet[],
   directory: string
 ) => {
   const { translationMap, termTranslations } = getTranslations(directory)
   let translatedFtl = ''
 
   // include all terms, e.g. -product-firefox-accounts
-  for (const termReference of engTermReferences) {
+  for (const termSet of engTermSets) {
     if (termTranslations) {
       let translationFound = false
       for (const termTranslation of termTranslations) {
-        if (termReference.ftlId === termTranslation.ftlId) {
+        if (termSet.ftlId === termTranslation.ftlId) {
           translationFound = true
-          translatedFtl += `${termReference.ftlId} = ${termTranslation.translation}\n`
+          translatedFtl += `${termSet.ftlId} = ${termTranslation.translation}\n`
         }
       }
-      // if the terms from `otherFtlFile` doesn't contain an existing matches, default to English
+      // if the terms from `otherFtlFile` doesn't contain an existing matche, default to English
       if (!translationFound) {
-        translatedFtl += `${termReference.ftlId} = ${termReference.translation}\n`
+        translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
       }
     } else {
-      translatedFtl += `${termReference.ftlId} = ${termReference.translation}\n`
+      translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
     }
   }
 
-  ftlSets.forEach((set) => {
-    let translationFound = false
-
+  ftlSets.forEach((ftlSet) => {
     for (const poSet of translationMap) {
       let poSetTranslation = poSet.translation
       let poSetEng = poSet.eng
 
-      for (const termReference of engTermReferences) {
+      for (const termSet of engTermSets) {
         // when we compare the ftl string to existing po translations, we replace term references
         // in the ftl string with its english translation
-        if (poSetTranslation.includes(termReference.translation)) {
+        if (poSetTranslation.includes(termSet.translation)) {
           poSetTranslation = poSetTranslation.replace(
-            termReference.translation,
-            termReference.ftlId
+            termSet.translation,
+            termSet.reference
           )
         }
-        if (poSetEng.includes(termReference.translation)) {
-          poSetEng = poSetEng.replace(
-            termReference.translation,
-            termReference.ftlId
-          )
+        if (poSetEng.includes(termSet.translation)) {
+          poSetEng = poSetEng.replace(termSet.translation, termSet.reference)
         }
       }
 
@@ -238,32 +233,26 @@ const getTranslatedFtl = (
         // Curly quotes/apostrophes are preferred and the l10n team enforces them in ftl files.
         // It's possible po translations (and english ids) use straight quotes though, so we compare
         // both versions to find a matching translation and save the translation with curly quotes
-        const ftlEngWithStraightQuotes = set.translation
+        const ftlEngWithStraightQuotes = ftlSet.translation
           .replace('’', "'")
           .replace('‘', "'")
           .replace('“', '"')
           .replace('”', '"')
 
         if (
-          poSetEng.trim() === set.translation.trim() ||
+          poSetEng.trim() === ftlSet.translation.trim() ||
           poSetEng.trim() === ftlEngWithStraightQuotes.trim()
         ) {
-          translationFound = true
           const translationCurlyQuotes = poSetTranslation
             .replace("'", '’')
             .replace("'", '‘')
             .replace('"', '“')
             .replace('"', '”')
 
-          translatedFtl += `${set.ftlId} = ${translationCurlyQuotes}\n`
+          translatedFtl += `${ftlSet.ftlId} = ${translationCurlyQuotes}\n`
           break
         }
       }
-    }
-
-    // include IDs set to message references, e.g. `{ }`
-    if (!translationFound && isMessageReference(set.translation)) {
-      translatedFtl += `${set.ftlId} = ${set.translation}\n`
     }
   })
 
@@ -290,15 +279,10 @@ const getLangDirs = async () => {
     const ftlContent = fs.readFileSync(`${ftlDir}/${ftlFile}`).toString('utf-8')
 
     const ftlEntries = parse(ftlContent, {}).body
-    const { ftlSets, termReferences: engTermReferences } =
-      getFtlSets(ftlEntries)
+    const { ftlSets, termSets: engTermSets } = getFtlSets(ftlEntries)
 
     langDirs.forEach((directory) => {
-      const translatedFtl = getTranslatedFtl(
-        ftlSets,
-        engTermReferences,
-        directory
-      )
+      const translatedFtl = getTranslatedFtl(ftlSets, engTermSets, directory)
 
       // write to individual directories
       if (trialRun) {

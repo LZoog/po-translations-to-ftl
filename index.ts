@@ -315,7 +315,7 @@ const getLangDirs = async () => {
     (directory) =>
       directory !== 'templates' && directory !== 'en' && directory !== 'en-US'
   )
-  return trialRun ? [allLangDirs[44]] : allLangDirs
+  return trialRun ? [allLangDirs[0], allLangDirs[1]] : allLangDirs
 }
 
 ;(async () => {
@@ -341,7 +341,7 @@ const getLangDirs = async () => {
         try {
           fs.writeFile(
             `${localeDir}/${directory}/${ftlFile}`,
-            translatedFtl + '\n'
+            license + translatedFtl + '\n'
           )
           console.log(
             `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`

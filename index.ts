@@ -306,15 +306,12 @@ const getTranslatedFtl = (
 
 const getLangDirs = async () => {
   const localeDirContent = await fs.readdir(localeDir)
-  // only include directories and exclude the 'templates' + 'en' + 'en-US' directory
+  // only include directories and exclude the 'templates' + 'en' directories
   const allLangDirs: string[] = (
     await asyncFilter(localeDirContent, async (fileOrDirName: string) =>
       (await fs.lstat(`${localeDir}/${fileOrDirName}`)).isDirectory()
     )
-  ).filter(
-    (directory) =>
-      directory !== 'templates' && directory !== 'en' && directory !== 'en-US'
-  )
+  ).filter((directory) => directory !== 'templates' && directory !== 'en')
   return trialRun ? [allLangDirs[0], allLangDirs[1]] : allLangDirs
 }
 

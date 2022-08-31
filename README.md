@@ -4,14 +4,11 @@ This script was created to help the Firefox Accounts team programmatically migra
 
 This tool currently assumes:
 
-- You have a single `.ftl` file with ftl IDs and strings to use as the template base, e.g. `auth.ftl` for FxA
+- You have a single `.ftl` file with ftl IDs and strings
 - The `.po` file where translations will be extracted exist in an `LC_MESSAGES` directory within multiple language directories, e.g. `locale/ar/LC_MESSAGES/my-file.po` and `locale/es/LC_MESSAGES/my-file.po`
 - The strings set in your `.ftl` file match the `msgid` in your `.po` files
 
-Known things to do:
-
-- Tests would be nice
-- If you want to append to existing `.ftl` files (see "Usage"), this tool doesn't currently pick up new brand placeholders/message references (see TODO in code)
+NOTE: This tool currently _writes_ .ftl files, functionality needs to be expanded to account for existing .ftl files that only require appending new Fluent IDs and translations.
 
 ## Installation
 
@@ -31,7 +28,7 @@ Arguments:
 - `ftlFile` (required, string) - the name of the .ftl file to be referenced
 - `localeDir` (required, string) - the path to the locale directory containing language directories, which contain an LC_MESSAGES directory with .po files
 - `poFile` (required, string) - the name of the .po file to copy existing translations from
-- `otherFtlFile` (optional, string) - The name of an existing .ftl file that may contain translated terms, e.g. "-product-firefox-account", that we can refer to for possible translations. If this is not supplied or no match is found, the English version will be output. Useful for new files.
+- `otherFtlFile` (optional, string) - The name of an existing .ftl file that may contain translated terms, e.g. "-product-firefox-account", that we can refer to for possible translations. If this is not supplied or no match is found, the English version will be output
 - `trialRun` (optional, boolean, defaults to false) - if set to true, instead of writing all .ftl files to disk, console log the first two to verify they look as expected
 
 Example:
@@ -39,8 +36,3 @@ Example:
 ```
 npm start -- --ftlDir=../fxa/packages/fxa-auth-server/public/locales/en --ftlFile=auth.ftl --localeDir=../fxa-content-server-l10n/locale --poFile=server.po --otherFtlFile=settings.ftl --trialRun=true
 ```
-
-You can use this tool in two ways:
-
-- Generate new `.ftl` files in the locale directory, which occurs if one does not exist
-- Append new `.ftl` ID/translation sets to existing `.ftl` files, which occurs if the `localeDir/ftlFile` already exists

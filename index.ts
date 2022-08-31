@@ -17,23 +17,6 @@ const poVarsRegex = /%\(.*?\)s/g
 
 const license = `# This Source Code Form is subject to the terms of the Mozilla Public\n# License, v. 2.0. If a copy of the MPL was not distributed with this\n# file, You can obtain one at http://mozilla.org/MPL/2.0/.\n\n`
 
-// HACK - FxA changed "Firefox Account(s)" to "Firefox account(s)" and some translations
-// use the uppercase version, but we can safely replace them with a lowercased version.
-// This allows us to find the uppercase version and replace them with the correct reference
-// but the uppercase version is not included in any output
-const additionalTermSetsToReplace = [
-  {
-    ftlId: '-product-firefox-accounts',
-    reference: '{ -product-firefox-accounts }',
-    translation: 'Firefox Accounts',
-  },
-  {
-    ftlId: '-product-firefox-account',
-    reference: '{ -product-firefox-account }',
-    translation: 'Firefox Account',
-  },
-]
-
 const { ftlDir, ftlFile, localeDir, poFile, otherFtlFile, trialRun } = yargs(
   hideBin(process.argv)
 )
@@ -112,17 +95,57 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
   return poTranslation
 }
 
+// HACK: this is a special/weird case and can probably be removed (or edited).
+// FxA changed "Firefox Account" to "Firefox account" and some existing ftl files that
+// reference '-product-firefox-account' use an expression for lowercase/uppercase
+// translation. This checks for that and returns the lowercase translation
+const getFxATranslation = (entry: Entry) => {
+  let fxaTranslation = ''
+  if (
+    // @ts-ignore
+    (entry.id.name === 'product-firefox-account' ||
+      // @ts-ignore
+      entry.id.name === 'product-firefox-accounts') &&
+    // @ts-ignore
+    entry.value?.elements[0].type === 'Placeable'
+  ) {
+    // @ts-ignore
+    const { variants } = entry.value.elements[0].expression
+    for (const variant of variants) {
+      if (variant.key.name === 'lowercase') {
+        fxaTranslation = variant.value.elements[0].value
+        break
+      }
+    }
+  }
+  // if 'product-firefox-accounts' wasn't nested and we're referring to the
+  // English word "Accounts", at least we can lowercase it
+  // @ts-ignore
+  if (!fxaTranslation && entry.id.name === 'product-firefox-accounts') {
+    // @ts-ignore
+    fxaTranslation = (entry.value.elements[0].value as string).replace(
+      'Accounts',
+      'accounts'
+    )
+  }
+
+  return fxaTranslation
+}
+
 const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
   const ftlSets: FtlSet[] = []
-  // const termSets: TermSet[] = additionalTermSets
   const termSets: TermSet[] = []
 
   ftlEntries.forEach((entry) => {
     if (entry.type === 'Term') {
+      // HACK: see comment above fn
+      const fxaTranslation = getFxATranslation(entry)
+
       termSets.push({
         ftlId: `-${entry.id.name}`,
         reference: `{ -${entry.id.name} }`,
-        translation: entry.value.elements[0].value as string,
+        translation:
+          fxaTranslation || (entry.value.elements[0].value as string),
       })
       return
     }
@@ -204,32 +227,27 @@ const getTranslations = (directory: string) => {
 const getTranslatedFtl = (
   ftlSets: FtlSet[],
   engTermSets: TermSet[],
-  directory: string,
-  isNewFile = false
+  directory: string
 ) => {
   const { translationMap, termTranslations } = getTranslations(directory)
   let translatedFtl = ''
 
   // include all terms, e.g. -product-firefox-accounts
-  // TODO: this doesn't currently pick up new brand placeholders/message references
-  // for existing files. We'll need to insert them
-  if (isNewFile) {
-    for (const termSet of engTermSets) {
-      if (termTranslations) {
-        let translationFound = false
-        for (const termTranslation of termTranslations) {
-          if (termSet.ftlId === termTranslation.ftlId) {
-            translationFound = true
-            translatedFtl += `${termSet.ftlId} = ${termTranslation.translation}\n`
-          }
-        }
-        // if the terms from `otherFtlFile` doesn't contain an existing match, default to English
-        if (!translationFound) {
-          translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
-        } else {
-          translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
+  for (const termSet of engTermSets) {
+    if (termTranslations) {
+      let translationFound = false
+      for (const termTranslation of termTranslations) {
+        if (termSet.ftlId === termTranslation.ftlId) {
+          translationFound = true
+          translatedFtl += `${termSet.ftlId} = ${termTranslation.translation}\n`
         }
       }
+      // if the terms from `otherFtlFile` doesn't contain an existing match, default to English
+      if (!translationFound) {
+        translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
+      }
+    } else {
+      translatedFtl += `${termSet.ftlId} = ${termSet.translation}\n`
     }
   }
 
@@ -237,16 +255,6 @@ const getTranslatedFtl = (
     for (const poSet of translationMap) {
       let poSetTranslation = poSet.translation
       let poSetEng = poSet.eng
-
-      // HACK, see comment above `additionalTermSetsToReplace`
-      for (const engTermSet of additionalTermSetsToReplace) {
-        if (poSetTranslation.includes(engTermSet.translation)) {
-          poSetTranslation = poSetTranslation.replace(
-            engTermSet.translation,
-            engTermSet.reference
-          )
-        }
-      }
 
       for (const engTermSet of engTermSets) {
         const termSet =
@@ -296,17 +304,6 @@ const getTranslatedFtl = (
   return translatedFtl
 }
 
-const getNewFtlSets = (ftlSets: FtlSet[], localeFtl: string) => {
-  const localeFtlEntries = parse(localeFtl, {}).body
-  const { ftlSets: localeFtlSets } = getFtlSets(localeFtlEntries)
-
-  // compare main parsed FTL with one in translation directory, grab new entries
-  return ftlSets.filter(
-    (ftlSet) =>
-      !localeFtlSets.find((localeFtlSet) => localeFtlSet.ftlId === ftlSet.ftlId)
-  )
-}
-
 const getLangDirs = async () => {
   const localeDirContent = await fs.readdir(localeDir)
   // only include directories and exclude the 'templates' + 'en' directories
@@ -326,74 +323,28 @@ const getLangDirs = async () => {
     const ftlEntries = parse(ftlContent, {}).body
     const { ftlSets, termSets: engTermSets } = getFtlSets(ftlEntries)
 
-    langDirs.forEach(async (directory) => {
-      let localeFtl
-      try {
-        localeFtl = fs
-          .readFileSync(`${localeDir}/${directory}/${ftlFile}`)
-          .toString('utf-8')
-      } catch (e) {
-        // noop, write new files instead
-      }
+    langDirs.forEach((directory) => {
+      const translatedFtl = getTranslatedFtl(ftlSets, engTermSets, directory)
 
-      // If a locale FTL file exists, we want to append new translations rather than write a new file
-      if (localeFtl) {
-        const newFtlSets = getNewFtlSets(ftlSets, localeFtl)
-
-        const newTranslatedFtl = getTranslatedFtl(
-          newFtlSets,
-          engTermSets,
-          directory
+      // write to individual directories
+      if (trialRun) {
+        console.log(
+          `==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n` +
+            license +
+            translatedFtl +
+            '\n'
         )
-
-        // append to each file
-        if (trialRun) {
-          console.log(
-            `==========\nContent to be appended to ${localeDir}/${directory}/${ftlFile}:\n==========\n` +
-              newTranslatedFtl +
-              '\n'
-          )
-        } else if (newFtlSets) {
-          try {
-            fs.appendFile(
-              `${localeDir}/${directory}/${ftlFile}`,
-              newTranslatedFtl + '\n'
-            )
-            console.log(
-              `Successfully appended new ftl to ${localeDir}/${directory}/${ftlFile}`
-            )
-          } catch (e) {
-            console.log('Error appending to ftl file: ', e)
-          }
-        }
       } else {
-        const translatedFtl = getTranslatedFtl(
-          ftlSets,
-          engTermSets,
-          directory,
-          true
-        )
-
-        // write to individual directories
-        if (trialRun) {
-          console.log(
-            `==========\nContent to be written to ${localeDir}/${directory}/${ftlFile}:\n==========\n` +
-              license +
-              translatedFtl +
-              '\n'
+        try {
+          fs.writeFile(
+            `${localeDir}/${directory}/${ftlFile}`,
+            license + translatedFtl + '\n'
           )
-        } else {
-          try {
-            fs.writeFile(
-              `${localeDir}/${directory}/${ftlFile}`,
-              license + translatedFtl + '\n'
-            )
-            console.log(
-              `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`
-            )
-          } catch (e) {
-            console.log('Error writing ftl file: ', e)
-          }
+          console.log(
+            `Successfully wrote to ${localeDir}/${directory}/${ftlFile}`
+          )
+        } catch (e) {
+          console.log('Error writing ftl file: ', e)
         }
       }
     })

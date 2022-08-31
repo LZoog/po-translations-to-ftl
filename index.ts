@@ -114,6 +114,7 @@ const convertPoVarsToFltVars = (poTranslation: string) => {
 
 const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
   const ftlSets: FtlSet[] = []
+  // const termSets: TermSet[] = additionalTermSets
   const termSets: TermSet[] = []
 
   ftlEntries.forEach((entry) => {
@@ -152,7 +153,7 @@ const getFtlSets = (ftlEntries: Entry[], termsOnly = false) => {
 
   // Some terms may contain others, e.g. "Firefox" and "Firefox accounts"
   // Since we replace strings in array order, we sort the array by string length
-  termSets.sort((a, b) => b.translation?.length - a.translation?.length)
+  termSets.sort((a, b) => b.translation.length - a.translation.length)
 
   return { ftlSets, termSets }
 }
@@ -352,7 +353,7 @@ const getLangDirs = async () => {
               newTranslatedFtl +
               '\n'
           )
-        } else if (newTranslatedFtl) {
+        } else if (newFtlSets) {
           try {
             fs.appendFile(
               `${localeDir}/${directory}/${ftlFile}`,
